@@ -4,70 +4,154 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Document</title>
-    <style>
-        .youtube,
-        .cloudflare {
-            display: none;
+    <style>        
+        *{
+            margin: 0;
+            padding: 0;
         }
-
-        /* Show the video with the 'visible' class */
-        .youtube.visible,
-        .cloudflare.visible {
-            display: block;
+        body{
+            background-color: black;
         }
+        /* Show the video with the 'visible' class */   
+        .youtube {
+            width: 100%;
+            height: 100vh;
+        }  
     </style>
 </head>
-<body>
-
-
-        
-
-
-    <video id="sample_video" type="video/mp4"  class="cloudflare" controls width="320" height="240">
-        <source src="http://commondatastorage.googleapis.com/gtv-videos-bucket/sample/SubaruOutbackOnStreetAndDirt.mp4" type="video/mp4"/>
-    </video>
-    
+<body>  
     <div id="player"  class="youtube visible"></div>
-    
-    <button onclick="toggle()">Toggle</button>
-    <h1>The two way communication</h1>
-    <p>Message from Flutter: <span id="messageFromFlutter"></span></p>
-    <button onclick="sendMessageToFlutter()">Send Message to Flutter</button>
-
     <script>
+
+        var playerId='KDL078L'
+        var isAdvert= false;
+        var initial_id="a_C2V3iNPbY"
+        var current_id=''
+        var advert_id=''
+        // var squeezeback=false;
+        // var squeezeback_url=''
+
+        function extract_video_id(url){
+            var regExp = /^(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/(?:[^\/\n\s]+\/\S+\/|(?:v|e(?:mbed)?)\/|\S*?[?&]v=)|youtu\.be\/)([a-zA-Z0-9_-]{11})/;
+            var match = url.match(regExp);
+            return match ? match[1] : null;
+        }
+
+        function get_video_id(){
+            fetch(
+                `https://warm-journey-18609535df73.herokuapp.com/api/v1/matatu/get_content/${playerId}/`,
+                {
+                    method:'GET',
+                }
+                )
+            .then(response => response.json())
+            .then(data => {
+                if(data.url.media_url != current_id){
+                    current_id=get_video_id(data.url.media_url);
+                    console.log(data.url.media_url)
+                }
+                console.log('No new content found');
+            })
+            .catch(error => {
+                console.error('Error:', error);
+            })
+        }
+
+        // change backend video
+        function change_backend_video(){
+            fetch(
+                `https://warm-journey-18609535df73.herokuapp.com/api/v1/matatu/play_next_content/${playerId}/`
+                ,{
+                method:'POST',                
+                }
+                )
+                // check for status
+                .then(response =>{
+                    if(response.ok){
+                        console.log(response.status, response.statusText);
+                    }
+                })
+            }
+                
         // YouTube Player API
+        // 'ph8hD1V-syo'
         var player;
         function onYouTubeIframeAPIReady() {
             player = new YT.Player('player', {
-                height: '388',
-                width: '690',
-                videoId: 'ph8hD1V-syo',
+                height: 'fullscreen',
+                width: 'fullscreen',
+                videoId:isAdvert?advert_id:current_id.length>0?current_id:initial_id,
                 events: {
-                    'onReady': onPlayerReady
+                    'onReady': onPlayerReady,
+                    'onStateChange': onPlayerStateChange
+
                 }
             });
         }
+
+        // function adjustYoutubeElementStyles() {
+        //     var youtubeElement = document.querySelector('.youtube');
+        //     var body= document.querySelector('body');
+        //     if (squeezeback) {
+        //         body.style.backgroundImage = `url(${squeezeback_url})`;
+        //         youtubeElement.style.width = '50%';
+        //         youtubeElement.style.height = '60vh';
+        //     } else {
+        //         youtubeElement.style.width = '100%';
+        //         youtubeElement.style.height = '100vh';
+        //     }
+        // }
+        
 
         function onPlayerReady(event) {
             event.target.playVideo();
         }
 
-        // Toggle function
-        function toggle() {
-            const isCloudflare = document.querySelector('.cloudflare');
-            const isYoutube = document.querySelector('.youtube');
-            const playerState = player.getPlayerState();
-            if (playerState === YT.PlayerState.PLAYING) {
-                player.pauseVideo();
-                
-                isYoutube.classList.remove('visible');
-                isCloudflare.classList.add('visible');
-                $('#sample_video').trigger('play');
-            } else {
-                player.playVideo();
-                isCloudflare.classList.remove('visible');
-                $('#sample_video').trigger('pause');
-                isYoutube.classList.add('visible');
+        function get_advert(){
+            fetch(
+                `https://warm-journey-18609535df73.herokuapp.com/api/v1/adverts/advert_check/${playerId}/`
+                ,{
+                method:'GET',
+                }
+                )
+            .then(response => response.json())
+            .then(data => {
+                if(data){
+                    if(data.link){
+                        if(data.type=='video'){
+                            isAdvert=true;
+                            advert_id=extract_video_id(data.link);
+                        }
+                    }
+                }
+            })
+        }
+        function onPlayerStateChange(event) {
+        // Check if the video is playing
+        if (event.data == YT.PlayerState.PLAYING) {
+            // Check every second to see how much time is left
+            var checkTimeInterval = setInterval(function() {                
+                var timeRemaining = player.getDuration() - player.getCurrentTime();
+                // If there are 5 seconds or less left, do something
+                if(timeRemaining <= 1){                    
+                    if(current_id.length==0){
+                        // run get video every time the video is playing to identify changes
+                        get_video_id();
+                        // run get advert to fetch advert if any
+                        get_advert();
+                    }
+                    else if(isAdvert){
+                        isAdvert=false;
+                    }
+                }
+                else if (timeRemaining <= 2) {
+                    // Do something here when there are 5 seconds left
+                    console.log('Video is about to end!');
+                    change_backend_video();
+                    // Clear the interval if you only want to do it once
+                    clearInterval(checkTimeInterval);
+                    }
+                }, 1000); // Check every second
             }
         }
 
@@ -81,6 +165,33 @@
             var message='Hello from JavaScript!';
             messageHandler.postMessage(message);
         }
+
+        // Function to show a toast message
+    function showToast(message, duration) {
+        var toast = document.createElement('div');
+        toast.textContent = message;
+        toast.style.position = 'fixed';
+        toast.style.bottom = '20px';
+        toast.style.left = '50%';
+        toast.style.transform = 'translateX(-50%)';
+        toast.style.backgroundColor = 'black';
+        toast.style.color = 'white';
+        toast.style.padding = '10px';
+        toast.style.borderRadius = '5px';
+        toast.style.zIndex = '1000';
+        document.body.appendChild(toast);
+
+        // Remove the toast message after 'duration' milliseconds
+        setTimeout(function() {
+            document.body.removeChild(toast);
+            }, duration);
+        }
+
+        // Example usage: Show a toast message for 2000 milliseconds (2 seconds)
+        showToast('youtube video is playing!', 2000);
+        // setInterval(get_video_id, 1000);
+        // setInterval(get_advert, 1000);
+        
     </script>
     <script src="https://www.youtube.com/iframe_api"></script>
     <script src= 
