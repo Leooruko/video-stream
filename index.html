@@ -24,19 +24,20 @@
 <body>  
     <div id="player" class="youtube visible"></div>
 
-    <script>
-        var playerId = 'KDL078L';
-        var isAdvert = false;
-        var initialId = "a_C2V3iNPbY";
-        var currentId = '';
-        var advertId = '';
+    <script>        
+    // reat native injects values 
+        // var isAdvert = false;
+        // var initialId = "a_C2V3iNPbY";
+        // var currentId = '';
+        // var advertId = '';
+        var seek_time=0;
         var player;
 
         function onYouTubeIframeAPIReady() {
             player = new YT.Player('player', {
                 height: '100%', // Use '100%' instead of 'fullscreen' for compatibility
                 width: '100%',
-                videoId: isAdvert ? advertId : (currentId.length > 0 ? currentId : initialId),
+                videoId: isAdvert ? advertId  : initialId,
                 events: {
                     'onReady': onPlayerReady,
                     'onStateChange': onPlayerStateChange
@@ -50,81 +51,61 @@
             return match ? match[1] : null;
         }
 
-        function getVideoId() {
-            fetch(`https://warm-journey-18609535df73.herokuapp.com/api/v1/matatu/get_content/${playerId}/`)
-            .then(response => {
-                if (!response.ok) {
-                    throw new Error('Network response was not ok');
-                }
-                return response.json();
-            })
-            .then(data => {
-                if (data.url.media_url !== currentId) {
-                    currentId = extractVideoId(data.url.media_url);
-                    console.log(data.url.media_url);
-                }
-                console.log('No new content found');
-            })
-            .catch(error => {
-                console.error('Error:', error);
-            });
-        }
-
-        function changeBackendVideo() {
-            fetch(`https://warm-journey-18609535df73.herokuapp.com/api/v1/matatu/play_next_content/${playerId}/`, {
-                method: 'POST'
-            })
-            .then(response => {
-                if (!response.ok) {
-                    throw new Error('Network response was not ok');
-                }
-                console.log(response.status, response.statusText);
-            })
-            .catch(error => {
-                console.error('Error:', error);
-            });
-        }
+        
 
         function onPlayerReady(event) {
             event.target.playVideo();
         }
 
-        function getAdvert() {
-            fetch(`https://warm-journey-18609535df73.herokuapp.com/api/v1/adverts/advert_check/${playerId}/`)
-            .then(response => {
-                if (!response.ok) {
-                    throw new Error('Network response was not ok');
-                }
-                return response.json();
-            })
-            .then(data => {
-                if (data && data.link && data.type === 'video') {
-                    isAdvert = true;
-                    advertId = extractVideoId(data.link);
-                }
-            })
-            .catch(error => {
-                console.error('Error:', error);
-            });
-        }
 
         function onPlayerStateChange(event) {
             if (event.data == YT.PlayerState.PLAYING) {
                 var checkTimeInterval = setInterval(function() {                
                     var timeRemaining = player.getDuration() - player.getCurrentTime();
                     if (timeRemaining <= 1) {                    
-                        if (currentId.length == 0) {
-                            getVideoId();
-                            getAdvert();
+                        if (initialId) {
+                            if(isAdvert){
+                                isAdvert=false
+                                // seek_time = player.getCurrentTime();
+                                sendMessegeToReactNative('advert_done')
+                                // resumeVideo
+                                player.loadVideoById(currentId, seek_time);
+                            }
+                            else if(initialId==currentId){                           
+                            changeBackendVideo();
+                            } 
+                            player.loadVideoById(currentId);
+                            initialId = currentId;                                                 
                         } else if (isAdvert) {
                             isAdvert = false;
+                            sendMessegeToReactNative('advert_done_video')
                         }
-                    } else if (timeRemaining <= 2) {
-                        console.log('Video is about to end!');
-                        changeBackendVideo();
-                        clearInterval(checkTimeInterval);
-                    }
+                    } 
                 }, 1000);
+            }
+        }
+
+        function sendMessegeToReactNative(message) {
+            window.ReactNativeWebView.postMessage(message);
+        }
+
+        function receiveMessageFromReactNative(event) {
+            var message = event.data;
+            // messege comes in as a map i.e {'video':'video_url','advert':'advert_url'}
+            if (message.video) {
+                player.stopVideo();
+                initialId=currentId=extractVideoId(message.video);
+                player.loadVideoById(extractVideoId(message.video));
+                player.playVideo();
+            } else if (message.advert) {
+                player.stopVideo();
+                seek_time = player.getDuration();
+                isAdvert = true;
+                advertId = extractVideoId(message.advert);                
+                player.loadVideoById(extractVideoId(message.advert));
+                player.playVideo();
+            } else if (message === 'getState') {
+                sendMessegeToReactNative({'state': player.getDuration()});
             }
         }
 
