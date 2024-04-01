@@ -32,6 +32,8 @@
         // var advertId = '';
         // var seek_time=0;
         var player;
+        var currentId= extractVideoId(currenturl)
+        var advertid=  extractVideoId(adverturl)
 
         function onYouTubeIframeAPIReady() {
             player = new YT.Player('player', {
